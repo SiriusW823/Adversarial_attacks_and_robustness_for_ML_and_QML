@@ -129,8 +129,6 @@ These preliminary findings indicate that QML classifiers may offer enhanced resi
 * Only white-box, gradient-based attacks (FGSM / PGD) are considered; other adversarial threat models (e.g., black-box, universal perturbations) are not explored.
 * No adversarial training or certified defense mechanisms are implemented.
 * Quantum models are constrained by current QML frameworks; results may not generalize to larger circuits or real quantum hardware.
-
-**Future directions** might include: adversarial training for QML, stronger/more diverse attacks, application to larger-scale datasets, and evaluation on real quantum hardware or simulators with noise.
 ---
 
 ## License
