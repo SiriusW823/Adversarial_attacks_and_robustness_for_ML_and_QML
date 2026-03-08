@@ -19,6 +19,11 @@ from robustness_scan import pgd_attack
 EmbeddingType = Literal["angle", "amplitude"]
 EntanglerType = Literal["basic", "strong"]
 
+DEFAULT_N_QUBITS = 4
+DEFAULT_N_LAYERS = 2
+DEFAULT_MEASUREMENT_WIRES = 2
+AMPLITUDE_NORMALIZATION_EPS = 1e-12
+
 
 @dataclass(frozen=True)
 class AblationResult:
@@ -93,6 +98,12 @@ class CNNBackbone(nn.Module):
 
 
 def get_embedding_feature_dim(embedding: EmbeddingType, n_qubits: int) -> int:
+    """Return the classical feature size required by the chosen quantum embedding.
+
+    Angle embedding applies one rotation angle per qubit, so it consumes ``n_qubits``
+    features. Amplitude embedding prepares a full quantum state vector, which needs
+    ``2**n_qubits`` amplitudes before optional zero padding.
+    """
     return n_qubits if embedding == "angle" else 2**n_qubits
 
 
@@ -115,7 +126,7 @@ def apply_embedding(
         qml.AngleEmbedding(inputs, wires=wires)
         return
 
-    qml.AmplitudeEmbedding(inputs, wires=wires, pad_with=0.0, normalize=False)
+    qml.AmplitudeEmbedding(inputs, wires=wires, pad_with=0.0, normalize=True)
 
 
 def apply_entangler(
@@ -133,9 +144,9 @@ def apply_entangler(
 def build_quantum_torch_layer(
     embedding: EmbeddingType,
     entangler: EntanglerType,
-    n_qubits: int = 4,
-    n_layers: int = 2,
-    measurement_wires: int = 2,
+    n_qubits: int = DEFAULT_N_QUBITS,
+    n_layers: int = DEFAULT_N_LAYERS,
+    measurement_wires: int = DEFAULT_MEASUREMENT_WIRES,
 ) -> qml.qnn.TorchLayer:
     dev = qml.device("default.qubit", wires=n_qubits)
     wires = tuple(range(n_qubits))
@@ -157,8 +168,8 @@ class CustomQuantumCNN(nn.Module):
         self,
         embedding: EmbeddingType,
         entangler: EntanglerType,
-        n_qubits: int = 4,
-        n_layers: int = 2,
+        n_qubits: int = DEFAULT_N_QUBITS,
+        n_layers: int = DEFAULT_N_LAYERS,
         n_classes: int = 2,
     ) -> None:
         super().__init__()
@@ -166,7 +177,7 @@ class CustomQuantumCNN(nn.Module):
         self.entangler = entangler
         self.n_qubits = n_qubits
         self.n_layers = n_layers
-        self.measurement_wires = min(2, n_qubits)
+        self.measurement_wires = min(DEFAULT_MEASUREMENT_WIRES, n_qubits)
         self.feature_dim = 32 * 2 * 2
         self.embedding_feature_dim = get_embedding_feature_dim(embedding, n_qubits)
 
@@ -185,7 +196,8 @@ class CustomQuantumCNN(nn.Module):
         x = self.fc_feat(x)
         if self.embedding == "angle":
             return torch.tanh(x)
-        return F.normalize(x, p=2, dim=1, eps=1e-12)
+        # Amplitude embedding encodes a quantum state vector, so inputs must be normalized.
+        return F.normalize(x, p=2, dim=1, eps=AMPLITUDE_NORMALIZATION_EPS)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.backbone(x)
@@ -200,12 +212,17 @@ def train_model(
     epochs: int = 80,
     lr: float = 0.005,
     device: torch.device | str = "cpu",
+    log_interval: int = 20,
+    verbose: bool = True,
 ) -> nn.Module:
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    model.train()
 
-    for _ in range(epochs):
+    for epoch in range(epochs):
+        model.train()
+        running_loss = 0.0
+        batches = 0
+
         for batch_x, batch_y in train_loader:
             batch_x = batch_x.to(device)
             batch_y = batch_y.to(device)
@@ -214,6 +231,13 @@ def train_model(
             loss = F.cross_entropy(logits, batch_y)
             loss.backward()
             optimizer.step()
+            running_loss += loss.item()
+            batches += 1
+
+        should_log = epoch == 0 or epoch + 1 == epochs or (epoch + 1) % log_interval == 0
+        if verbose and batches and should_log:
+            avg_loss = running_loss / batches
+            print(f"  epoch {epoch + 1:>3}/{epochs}: loss={avg_loss:.4f}")
 
     return model
 
@@ -240,6 +264,7 @@ def run_architecture_ablation(
     seed: int = 0,
     data_seed: int = 42,
     device: torch.device | str = "cpu",
+    verbose: bool = True,
 ) -> list[AblationResult]:
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -257,8 +282,10 @@ def run_architecture_ablation(
     ]
 
     for embedding, entangler in architectures:
+        if verbose:
+            print(f"Training architecture: embedding={embedding}, entangler={entangler}")
         model = CustomQuantumCNN(embedding=embedding, entangler=entangler)
-        train_model(model, train_loader, epochs=epochs, device=device)
+        train_model(model, train_loader, epochs=epochs, device=device, verbose=verbose)
 
         clean_accuracy = evaluate_accuracy(model, X_test, y_test, device=device)
         X_adv = pgd_attack(
@@ -350,6 +377,11 @@ def parse_args() -> argparse.Namespace:
         help="Torch device to use, e.g. 'cpu' or 'cuda'.",
     )
     parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress per-architecture training progress logs.",
+    )
+    parser.add_argument(
         "--plot-path",
         default="quantum_ablation_grouped_bar.png",
         help="Path to save the grouped bar chart.",
@@ -374,6 +406,7 @@ def main() -> None:
         seed=args.seed,
         data_seed=args.data_seed,
         device=args.device,
+        verbose=not args.quiet,
     )
 
     print("Quantum architecture ablation results")
