@@ -72,17 +72,9 @@ These white-box gradient-based attacks probe the sensitivity of the models to ad
 ### Requirements
 
 - Python 3.10 or newer  
-- (Recommended) GPU for faster training  
-- Python packages:  
-
-  pennylane
-  torch
-  torchvision
-  numpy
-  matplotlib
-  captum
-
-* (Optional) Additional dependencies depending on dataset or utility code
+- Google Colab (recommended) with **T4 GPU** backend for faster classical-model training  
+- Install the Python packages listed in [`requirements.txt`](requirements.txt). The current scripts depend on `torch`, `numpy`, `matplotlib`, `pennylane`, `autoray`, and `captum`.
+- `torchvision` and `torchaudio` are not required by the current checked-in Python scripts, so they are intentionally omitted from `requirements.txt`.
 
 ### Run Instructions
 
@@ -98,14 +90,23 @@ These white-box gradient-based attacks probe the sensitivity of the models to ad
    python -m venv venv
    source venv/bin/activate     # Linux / macOS  
    # or `venv\Scripts\activate` on Windows  
-   pip install -r requirements.txt    # 如果你提供 requirements.txt  
+   pip install -r requirements.txt
    ```
-3. Open the notebook:
+3. If you are using **Google Colab + T4 GPU**:
+
+   ```python
+   # Resolve common Colab package conflicts before installing the project's requirements.
+   !pip uninstall -y jax jaxlib opencv-python opencv-python-headless opencv-contrib-python shap pytensor albumentations albucore >/dev/null 2>&1
+   !pip install -r requirements.txt --quiet
+   ```
+
+   Then enable **Runtime → Change runtime type → T4 GPU** before running the notebook. PyTorch will use the GPU when available, while PennyLane's default simulator (`default.qubit`) still runs on CPU.
+4. Open the notebook:
 
    ```bash
    jupyter notebook Adversarial_attacks_and_robustness_for_ML_and_QML.ipynb
    ```
-4. Execute all cells sequentially to run the entire pipeline: training, attack generation, evaluation, and visualization.
+5. Execute all cells sequentially to run the entire pipeline: training, attack generation, evaluation, and visualization.
 
 ### Script Example: Quantum Architecture Ablation Study
 
