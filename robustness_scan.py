@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn.functional as F
 
-DEFAULT_EPS_LIST = [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3]
+DEFAULT_EPS_LIST = [0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5]
 
 
 def _zero_model_grad(model: torch.nn.Module) -> None:

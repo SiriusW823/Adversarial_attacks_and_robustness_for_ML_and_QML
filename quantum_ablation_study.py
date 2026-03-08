@@ -367,7 +367,7 @@ def evaluate_accuracy(
 
 
 def run_architecture_ablation(
-    attack_eps: float = 0.15,
+    attack_eps: float = 0.2,
     attack_alpha: float = 0.04,
     attack_steps: int = 10,
     n_samples: int = 200,
@@ -438,7 +438,7 @@ def run_architecture_ablation(
 def plot_ablation_results(
     results: list[AblationResult],
     attack_name: str = "PGD",
-    attack_eps: float = 0.15,
+    attack_eps: float = 0.2,
     ax: plt.Axes | None = None,
 ):
     if ax is None:
@@ -505,7 +505,7 @@ def print_runtime_versions() -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a 2x2 quantum architecture ablation study.")
-    parser.add_argument("--attack-eps", type=float, default=0.15, help="PGD epsilon budget.")
+    parser.add_argument("--attack-eps", type=float, default=0.2, help="PGD epsilon budget.")
     parser.add_argument("--attack-alpha", type=float, default=0.04, help="PGD step size.")
     parser.add_argument("--attack-steps", type=int, default=10, help="Number of PGD steps.")
     parser.add_argument("--epochs", type=int, default=80, help="Training epochs per architecture.")
