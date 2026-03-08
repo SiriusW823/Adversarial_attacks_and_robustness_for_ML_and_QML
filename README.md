@@ -96,12 +96,17 @@ These white-box gradient-based attacks probe the sensitivity of the models to ad
 3. If you are using **Google Colab + T4 GPU**:
 
    ```python
-   # Resolve common Colab package conflicts before installing the project's requirements.
-   !pip uninstall -y jax jaxlib opencv-python opencv-python-headless opencv-contrib-python shap pytensor albumentations albucore >/dev/null 2>&1
-   !pip install -U pip setuptools wheel --quiet
-   !pip install -r requirements.txt --quiet
-   !pip install -U "pennylane-lightning[gpu]>=0.40.0" --quiet
+   %pip install -U pip setuptools wheel --quiet
+   %pip install --upgrade --upgrade-strategy eager --no-cache-dir \
+       "numpy>=2.0" \
+       "autoray>=0.8.2" \
+       "pennylane>=0.44.0" \
+       "pennylane-lightning[gpu]>=0.44.0" \
+       captum \
+       matplotlib --quiet
    ```
+
+   After the first install pass, restart the Colab runtime once before importing project modules. The checked-in notebook now does this automatically to avoid the NumPy binary-compatibility error `numpy.dtype size changed`.
 
    Then enable **Runtime → Change runtime type → T4 GPU** before running the notebook. The scripts now default to `--device auto` and `--quantum-device auto`, which will:
    - choose `cuda` for PyTorch when a GPU is available;
