@@ -101,7 +101,7 @@ def plot_attribution_comparison(
     adv_image: torch.Tensor | np.ndarray,
     adv_attribution: torch.Tensor | np.ndarray,
     target_class: int,
-    model_name: str = "",
+    model_name: str | None = None,
     axes: Sequence[plt.Axes] | None = None,
     add_colorbar: bool = True,
     vmin: float | None = None,
@@ -140,7 +140,7 @@ def plot_attribution_comparison(
         axis.set_title(title)
         axis.axis("off")
 
-    prefix = f"{model_name} — " if model_name else ""
+    prefix = f"{model_name} — " if model_name is not None else ""
     axes[0].text(
         0.02,
         -0.1,

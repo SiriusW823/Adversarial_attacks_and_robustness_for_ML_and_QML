@@ -25,7 +25,7 @@ from robustness_scan import pgd_attack
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compare Integrated Gradients heatmaps for ML and QML on the same sample."
+        description="Compare Integrated Gradients heat maps for ML and QML on the same sample."
     )
     parser.add_argument("--epochs", type=int, default=20, help="Training epochs for both models.")
     parser.add_argument("--batch-size", type=int, default=32, help="Training batch size.")
