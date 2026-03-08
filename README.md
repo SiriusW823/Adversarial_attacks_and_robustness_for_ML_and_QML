@@ -72,8 +72,9 @@ These white-box gradient-based attacks probe the sensitivity of the models to ad
 ### Requirements
 
 - Python 3.10 or newer  
-- Google Colab (recommended) with **T4 GPU** backend for faster classical-model training  
+- Google Colab (recommended) with **T4 GPU** backend for accelerated PyTorch and PennyLane-Lightning execution  
 - Install the Python packages listed in [`requirements.txt`](requirements.txt). The current scripts depend on `torch`, `numpy`, `matplotlib`, `pennylane`, `autoray`, and `captum`.
+- For Colab T4 runs, install `pennylane-lightning[gpu]` so the QML path can use the `lightning.gpu` backend when available.
 - `torchvision` and `torchaudio` are not required by the current checked-in Python scripts, so they are intentionally omitted from `requirements.txt`.
 
 ### Run Instructions
@@ -97,10 +98,17 @@ These white-box gradient-based attacks probe the sensitivity of the models to ad
    ```python
    # Resolve common Colab package conflicts before installing the project's requirements.
    !pip uninstall -y jax jaxlib opencv-python opencv-python-headless opencv-contrib-python shap pytensor albumentations albucore >/dev/null 2>&1
+   !pip install -U pip setuptools wheel --quiet
    !pip install -r requirements.txt --quiet
+   !pip install -U "pennylane-lightning[gpu]>=0.40.0" --quiet
    ```
 
-   Then enable **Runtime → Change runtime type → T4 GPU** before running the notebook. PyTorch will use the GPU when available, while PennyLane's default simulator (`default.qubit`) still runs on CPU.
+   Then enable **Runtime → Change runtime type → T4 GPU** before running the notebook. The scripts now default to `--device auto` and `--quantum-device auto`, which will:
+   - choose `cuda` for PyTorch when a GPU is available;
+   - prefer `lightning.gpu` for QML on Colab T4;
+   - fall back to `lightning.qubit` and then `default.qubit` if the GPU plugin is unavailable.
+
+   If the runtime prints `execution device=cpu` for the QML model, it means PyTorch sees the T4 GPU but PennyLane could not initialize `lightning.gpu`; the code will still run safely by moving the QML execution path to CPU instead of crashing on mixed CPU/GPU tensors.
 4. Open the notebook:
 
    ```bash
@@ -118,7 +126,7 @@ This repository also includes a standalone script for the 2×2 quantum ablation 
 The script trains the four architecture combinations, evaluates clean accuracy plus PGD robustness at a fixed epsilon, and saves a grouped bar chart:
 
 ```bash
-python quantum_ablation_study.py --attack-eps 0.15 --plot-path quantum_ablation_grouped_bar.png
+python quantum_ablation_study.py --device auto --quantum-device auto --attack-eps 0.15 --plot-path quantum_ablation_grouped_bar.png
 ```
 
 Optional flags such as `--epochs`, `--n-samples`, and `--device` can be used to shorten or scale the experiment.
@@ -166,7 +174,7 @@ For a reusable Captum-based explainability workflow, the repository now includes
 Example:
 
 ```bash
-python xai_ig_comparison_demo.py --epochs 20 --plot-path integrated_gradients_ml_qml_comparison.png
+python xai_ig_comparison_demo.py --device auto --quantum-device auto --epochs 20 --plot-path integrated_gradients_ml_qml_comparison.png
 ```
 
 The script trains one classical CNN and one quantum CNN on the synthetic plus/minus dataset, extracts the same held-out test image, generates a PGD adversarial version for each model, and saves a combined ML-vs-QML Integrated Gradients comparison figure.

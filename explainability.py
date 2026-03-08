@@ -16,7 +16,9 @@ def _model_device(model: torch.nn.Module) -> torch.device:
 
 
 def _prepare_single_image(image: torch.Tensor, device: torch.device) -> torch.Tensor:
-    prepared = image.detach().clone().to(device)
+    prepared = image.detach().clone().to(device=device, dtype=torch.float32)
+    if torch.is_complex(prepared):
+        prepared = torch.real(prepared)
     if prepared.ndim == 2:
         prepared = prepared.unsqueeze(0).unsqueeze(0)
     elif prepared.ndim == 3:
@@ -31,14 +33,14 @@ def _prepare_single_image(image: torch.Tensor, device: torch.device) -> torch.Te
 def _as_image_array(image: torch.Tensor | np.ndarray) -> np.ndarray:
     if isinstance(image, torch.Tensor):
         image = image.detach().cpu().numpy()
-    image = np.asarray(image)
+    image = np.asarray(np.real(image), dtype=np.float32)
     return np.squeeze(image)
 
 
 def _as_attribution_array(attribution: torch.Tensor | np.ndarray) -> np.ndarray:
     if isinstance(attribution, torch.Tensor):
         attribution = attribution.detach().cpu().numpy()
-    attribution = np.asarray(attribution, dtype=np.float32)
+    attribution = np.asarray(np.real(attribution), dtype=np.float32)
     if attribution.ndim == 4:
         attribution = attribution[0]
     if attribution.ndim == 3:

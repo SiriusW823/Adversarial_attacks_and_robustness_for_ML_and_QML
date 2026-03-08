@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Iterable, Literal
 
@@ -23,6 +24,9 @@ DEFAULT_N_QUBITS = 4
 DEFAULT_N_LAYERS = 2
 DEFAULT_MEASUREMENT_WIRES = 2
 AMPLITUDE_NORMALIZATION_EPS = 1e-12
+RUNTIME_PACKAGES = ("numpy", "pennylane", "autoray", "torch", "captum")
+GPU_QUANTUM_BACKENDS = ("lightning.gpu", "lightning.qubit", "default.qubit")
+CPU_QUANTUM_BACKENDS = ("lightning.qubit", "default.qubit")
 
 
 @dataclass(frozen=True)
@@ -37,6 +41,62 @@ class AblationResult:
         return f"{self.embedding.title()} + {self.entangler.title()}"
 
 
+def resolve_torch_device(device: torch.device | str = "auto") -> torch.device:
+    if isinstance(device, torch.device):
+        resolved = device
+    else:
+        requested = str(device).strip().lower()
+        if requested == "auto":
+            resolved = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            resolved = torch.device(requested)
+
+    if resolved.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("CUDA was requested, but torch.cuda.is_available() is False.")
+    return resolved
+
+
+def _quantum_backend_candidates(
+    quantum_device: str,
+    torch_device: torch.device,
+) -> tuple[str, ...]:
+    requested = quantum_device.strip().lower()
+    if requested != "auto":
+        return (requested,)
+    return GPU_QUANTUM_BACKENDS if torch_device.type == "cuda" else CPU_QUANTUM_BACKENDS
+
+
+def resolve_quantum_backend(
+    n_qubits: int,
+    quantum_device: str = "auto",
+    torch_device: torch.device | str = "auto",
+) -> tuple[qml.devices.Device, str]:
+    resolved_torch_device = resolve_torch_device(torch_device)
+    candidates = _quantum_backend_candidates(quantum_device, resolved_torch_device)
+    errors: list[str] = []
+
+    for backend_name in candidates:
+        try:
+            return qml.device(backend_name, wires=n_qubits), backend_name
+        except Exception as exc:
+            errors.append(f"{backend_name}: {type(exc).__name__}: {exc}")
+
+    candidate_list = ", ".join(candidates)
+    raise RuntimeError(
+        f"Failed to initialize a PennyLane device from candidates [{candidate_list}]. "
+        f"Errors: {' | '.join(errors)}"
+    )
+
+
+def resolve_model_device(
+    model: nn.Module,
+    device: torch.device | str = "auto",
+) -> torch.device:
+    requested_device = resolve_torch_device(device)
+    model_device = getattr(model, "execution_device", requested_device)
+    return resolve_torch_device(model_device)
+
+
 def make_plusminus_dataset(
     n_samples: int = 200,
     img_size: int = 8,
@@ -47,24 +107,24 @@ def make_plusminus_dataset(
     X, y = [], []
 
     for _ in range(n_samples):
-        img_plus = np.zeros((img_size, img_size))
+        img_plus = np.zeros((img_size, img_size), dtype=np.float32)
         img_plus[img_size // 2, :] = 1
         img_plus[:, img_size // 2] = 1
-        img_plus += noise_std * rng.standard_normal((img_size, img_size))
+        img_plus += noise_std * rng.standard_normal((img_size, img_size), dtype=np.float32)
 
-        img_minus = np.zeros((img_size, img_size))
+        img_minus = np.zeros((img_size, img_size), dtype=np.float32)
         img_minus[img_size // 2, :] = 1
-        img_minus += noise_std * rng.standard_normal((img_size, img_size))
+        img_minus += noise_std * rng.standard_normal((img_size, img_size), dtype=np.float32)
 
         X.append(img_plus)
         y.append(0)
         X.append(img_minus)
         y.append(1)
 
-    X = np.clip(np.array(X), 0.0, 1.0)
+    X = np.clip(np.asarray(X, dtype=np.float32), 0.0, 1.0)
     return (
         torch.tensor(X, dtype=torch.float32).unsqueeze(1),
-        torch.tensor(np.array(y), dtype=torch.long),
+        torch.tensor(np.asarray(y, dtype=np.int64), dtype=torch.long),
     )
 
 
@@ -138,6 +198,7 @@ def apply_embedding(
     inputs: torch.Tensor,
     wires: Iterable[int],
 ) -> None:
+    inputs = inputs.to(dtype=torch.float32)
     if embedding == "angle":
         qml.AngleEmbedding(inputs, wires=wires)
         return
@@ -163,11 +224,17 @@ def build_quantum_torch_layer(
     n_qubits: int = DEFAULT_N_QUBITS,
     n_layers: int = DEFAULT_N_LAYERS,
     measurement_wires: int = DEFAULT_MEASUREMENT_WIRES,
+    quantum_device: str = "auto",
+    torch_device: torch.device | str = "auto",
 ) -> qml.qnn.TorchLayer:
-    dev = qml.device("default.qubit", wires=n_qubits)
+    dev, backend_name = resolve_quantum_backend(
+        n_qubits=n_qubits,
+        quantum_device=quantum_device,
+        torch_device=torch_device,
+    )
     wires = tuple(range(n_qubits))
 
-    @qml.qnode(dev, interface="torch")
+    @qml.qnode(dev, interface="torch", diff_method="best")
     def qnode(inputs: torch.Tensor, weights: torch.Tensor):
         apply_embedding(embedding, inputs, wires)
         apply_entangler(entangler, weights, wires)
@@ -176,7 +243,9 @@ def build_quantum_torch_layer(
     weight_shapes = {
         "weights": get_weight_shape(entangler=entangler, n_layers=n_layers, n_qubits=n_qubits)
     }
-    return qml.qnn.TorchLayer(qnode, weight_shapes)
+    layer = qml.qnn.TorchLayer(qnode, weight_shapes)
+    layer.quantum_backend = backend_name
+    return layer
 
 
 class CustomQuantumCNN(nn.Module):
@@ -187,12 +256,16 @@ class CustomQuantumCNN(nn.Module):
         n_qubits: int = DEFAULT_N_QUBITS,
         n_layers: int = DEFAULT_N_LAYERS,
         n_classes: int = 2,
+        quantum_device: str = "auto",
+        torch_device: torch.device | str = "auto",
     ) -> None:
         super().__init__()
         self.embedding = embedding
         self.entangler = entangler
         self.n_qubits = n_qubits
         self.n_layers = n_layers
+        self.torch_device = resolve_torch_device(torch_device)
+        self.quantum_device = quantum_device
         self.measurement_wires = min(DEFAULT_MEASUREMENT_WIRES, n_qubits)
         self.feature_dim = 32 * 2 * 2
         self.embedding_feature_dim = get_embedding_feature_dim(embedding, n_qubits)
@@ -205,15 +278,36 @@ class CustomQuantumCNN(nn.Module):
             n_qubits=n_qubits,
             n_layers=n_layers,
             measurement_wires=self.measurement_wires,
+            quantum_device=quantum_device,
+            torch_device=self.torch_device,
+        )
+        self.quantum_backend = self.quantum.quantum_backend
+        self.execution_device = (
+            self.torch_device
+            if self.torch_device.type != "cuda" or self.quantum_backend == "lightning.gpu"
+            else torch.device("cpu")
         )
         self.fc_out = nn.Linear(self.measurement_wires, n_classes)
 
+    def _prepare_amplitude_features(self, x: torch.Tensor) -> torch.Tensor:
+        x = torch.real(x) if torch.is_complex(x) else x
+        x = torch.nan_to_num(x.to(dtype=torch.float32), nan=0.0, posinf=0.0, neginf=0.0)
+        norms = torch.linalg.vector_norm(x, ord=2, dim=1, keepdim=True)
+
+        safe_norms = norms.clamp_min(AMPLITUDE_NORMALIZATION_EPS)
+        normalized = x / safe_norms
+
+        default_state = torch.zeros_like(normalized)
+        default_state[:, 0] = 1.0
+        valid_mask = norms > AMPLITUDE_NORMALIZATION_EPS
+        return torch.where(valid_mask, normalized, default_state)
+
     def _prepare_quantum_features(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.fc_feat(x)
+        x = self.fc_feat(x).to(dtype=torch.float32)
         if self.embedding == "angle":
             return torch.tanh(x)
-        # Amplitude embedding encodes a quantum state vector, so inputs must be normalized.
-        return F.normalize(x, p=2, dim=1, eps=AMPLITUDE_NORMALIZATION_EPS)
+        # Amplitude embedding in modern PennyLane is stricter about real-valued, normalized inputs.
+        return self._prepare_amplitude_features(x)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.backbone(x)
@@ -231,6 +325,7 @@ def train_model(
     log_interval: int = 20,
     verbose: bool = True,
 ) -> nn.Module:
+    device = resolve_model_device(model, device)
     model.to(device)
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
@@ -265,6 +360,7 @@ def evaluate_accuracy(
     y: torch.Tensor,
     device: torch.device | str = "cpu",
 ) -> float:
+    device = resolve_model_device(model, device)
     model.eval()
     predictions = model(X.to(device)).argmax(dim=1)
     return (predictions == y.to(device)).float().mean().item()
@@ -280,8 +376,10 @@ def run_architecture_ablation(
     seed: int = 0,
     data_seed: int = 42,
     device: torch.device | str = "cpu",
+    quantum_device: str = "auto",
     verbose: bool = True,
 ) -> list[AblationResult]:
+    device = resolve_torch_device(device)
     torch.manual_seed(seed)
     np.random.seed(seed)
 
@@ -300,19 +398,30 @@ def run_architecture_ablation(
     for embedding, entangler in architectures:
         if verbose:
             print(f"Training architecture: embedding={embedding}, entangler={entangler}")
-        model = CustomQuantumCNN(embedding=embedding, entangler=entangler)
-        train_model(model, train_loader, epochs=epochs, device=device, verbose=verbose)
+        model = CustomQuantumCNN(
+            embedding=embedding,
+            entangler=entangler,
+            quantum_device=quantum_device,
+            torch_device=device,
+        )
+        execution_device = resolve_model_device(model, device)
+        if verbose:
+            print(
+                f"  using requested torch device={device}, quantum backend={model.quantum_backend}, "
+                f"execution device={execution_device}"
+            )
+        train_model(model, train_loader, epochs=epochs, device=execution_device, verbose=verbose)
 
-        clean_accuracy = evaluate_accuracy(model, X_test, y_test, device=device)
+        clean_accuracy = evaluate_accuracy(model, X_test, y_test, device=execution_device)
         X_adv = pgd_attack(
             model,
-            X_test.to(device),
-            y_test.to(device),
+            X_test.to(execution_device),
+            y_test.to(execution_device),
             eps=attack_eps,
             alpha=attack_alpha,
             steps=attack_steps,
         )
-        adversarial_accuracy = evaluate_accuracy(model, X_adv, y_test, device=device)
+        adversarial_accuracy = evaluate_accuracy(model, X_adv, y_test, device=execution_device)
 
         results.append(
             AblationResult(
@@ -377,6 +486,23 @@ def plot_ablation_results(
     return fig, ax
 
 
+def get_runtime_version(package_name: str) -> str:
+    try:
+        return version(package_name)
+    except PackageNotFoundError:
+        return "not installed"
+
+
+def print_runtime_versions() -> None:
+    print("Runtime dependency versions")
+    for package_name in RUNTIME_PACKAGES:
+        print(f"- {package_name}: {get_runtime_version(package_name)}")
+    torch_device = resolve_torch_device("auto")
+    print(f"- torch device selected: {torch_device}")
+    if torch_device.type == "cuda":
+        print(f"- cuda device name: {torch.cuda.get_device_name(torch_device)}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run a 2x2 quantum architecture ablation study.")
     parser.add_argument("--attack-eps", type=float, default=0.15, help="PGD epsilon budget.")
@@ -389,8 +515,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-seed", type=int, default=42, help="Dataset generation seed.")
     parser.add_argument(
         "--device",
-        default="cpu",
-        help="Torch device to use, e.g. 'cpu' or 'cuda'.",
+        default="auto",
+        help="Torch device to use, e.g. 'auto', 'cpu', or 'cuda'.",
+    )
+    parser.add_argument(
+        "--quantum-device",
+        default="auto",
+        help="PennyLane device to use, e.g. 'auto', 'lightning.gpu', 'lightning.qubit', or 'default.qubit'.",
     )
     parser.add_argument(
         "--quiet",
@@ -412,6 +543,19 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    print_runtime_versions()
+    resolved_device = resolve_torch_device(args.device)
+    probe_model = CustomQuantumCNN(
+        embedding="angle",
+        entangler="strong",
+        quantum_device=args.quantum_device,
+        torch_device=resolved_device,
+    )
+    probe_execution_device = resolve_model_device(probe_model, resolved_device)
+    print(
+        f"Selected execution path: torch device={resolved_device}, "
+        f"quantum backend={probe_model.quantum_backend}, execution device={probe_execution_device}"
+    )
     results = run_architecture_ablation(
         attack_eps=args.attack_eps,
         attack_alpha=args.attack_alpha,
@@ -421,7 +565,8 @@ def main() -> None:
         epochs=args.epochs,
         seed=args.seed,
         data_seed=args.data_seed,
-        device=args.device,
+        device=resolved_device,
+        quantum_device=args.quantum_device,
         verbose=not args.quiet,
     )
 

@@ -16,6 +16,13 @@ def _zero_model_grad(model: torch.nn.Module) -> None:
         model.zero_grad()
 
 
+def _prepare_attack_tensors(
+    images: torch.Tensor,
+    labels: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    return images.detach().clone().to(dtype=torch.float32), labels.detach().to(dtype=torch.long)
+
+
 def fgsm_attack(
     model: torch.nn.Module,
     images: torch.Tensor,
@@ -26,8 +33,8 @@ def fgsm_attack(
     was_training = model.training
     model.eval()
 
-    adv_images = images.detach().clone().requires_grad_(True)
-    labels = labels.detach()
+    adv_images, labels = _prepare_attack_tensors(images, labels)
+    adv_images.requires_grad_(True)
 
     _zero_model_grad(model)
     logits = model(adv_images)
@@ -55,9 +62,8 @@ def pgd_attack(
     was_training = model.training
     model.eval()
 
-    original_images = images.detach().clone()
+    original_images, labels = _prepare_attack_tensors(images, labels)
     adv_images = original_images.clone()
-    labels = labels.detach()
 
     for _ in range(steps):
         adv_images.requires_grad_()
@@ -109,8 +115,8 @@ def evaluate_robustness_curve(
         total = 0
 
         for images, labels in test_loader:
-            images = images.to(device)
-            labels = labels.to(device)
+            images = images.to(device=device, dtype=torch.float32)
+            labels = labels.to(device=device, dtype=torch.long)
 
             if eps == 0:
                 eval_images = images
@@ -137,7 +143,7 @@ def plot_robustness_decay_curve(
     ml_pgd_curve: Sequence[float],
     qml_fgsm_curve: Sequence[float],
     qml_pgd_curve: Sequence[float],
-    ax: plt.Axes | None = None
+    ax: plt.Axes | None = None,
 ):
     """Plot ML/QML FGSM and PGD accuracy curves against epsilon."""
     if ax is None:

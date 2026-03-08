@@ -17,6 +17,8 @@ from quantum_ablation_study import (
     ClassicalCNN,
     CustomQuantumCNN,
     make_plusminus_dataset,
+    resolve_model_device,
+    resolve_torch_device,
     train_model,
     train_test_split,
 )
@@ -36,7 +38,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attack-steps", type=int, default=10, help="Number of PGD steps.")
     parser.add_argument("--seed", type=int, default=0, help="Random seed for training and split.")
     parser.add_argument("--data-seed", type=int, default=42, help="Random seed for data generation.")
-    parser.add_argument("--device", default="cpu", help="Torch device to use, e.g. cpu or cuda.")
+    parser.add_argument("--device", default="auto", help="Torch device to use, e.g. auto, cpu, or cuda.")
+    parser.add_argument(
+        "--quantum-device",
+        default="auto",
+        help="PennyLane device to use, e.g. auto, lightning.gpu, lightning.qubit, or default.qubit.",
+    )
     parser.add_argument(
         "--plot-path",
         default="integrated_gradients_ml_qml_comparison.png",
@@ -48,6 +55,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    device = resolve_torch_device(args.device)
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
@@ -56,10 +64,21 @@ def main() -> None:
     train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=args.batch_size, shuffle=True)
 
     ml_model = ClassicalCNN()
-    qml_model = CustomQuantumCNN(embedding="angle", entangler="strong")
+    qml_model = CustomQuantumCNN(
+        embedding="angle",
+        entangler="strong",
+        quantum_device=args.quantum_device,
+        torch_device=device,
+    )
+    qml_device = resolve_model_device(qml_model, device)
 
-    train_model(ml_model, train_loader, epochs=args.epochs, device=args.device, verbose=False)
-    train_model(qml_model, train_loader, epochs=args.epochs, device=args.device, verbose=False)
+    print(
+        f"Selected execution path: torch device={device}, quantum backend={qml_model.quantum_backend}, "
+        f"qml execution device={qml_device}"
+    )
+
+    train_model(ml_model, train_loader, epochs=args.epochs, device=device, verbose=False)
+    train_model(qml_model, train_loader, epochs=args.epochs, device=qml_device, verbose=False)
 
     sample_idx = args.sample_idx % len(X_test)
     clean_image = X_test[sample_idx : sample_idx + 1]
@@ -68,16 +87,16 @@ def main() -> None:
 
     ml_adv_image = pgd_attack(
         ml_model,
-        clean_image.to(args.device),
-        target_tensor.to(args.device),
+        clean_image.to(device),
+        target_tensor.to(device),
         eps=args.attack_eps,
         alpha=args.attack_alpha,
         steps=args.attack_steps,
     ).cpu()
     qml_adv_image = pgd_attack(
         qml_model,
-        clean_image.to(args.device),
-        target_tensor.to(args.device),
+        clean_image.to(qml_device),
+        target_tensor.to(qml_device),
         eps=args.attack_eps,
         alpha=args.attack_alpha,
         steps=args.attack_steps,
@@ -97,10 +116,10 @@ def main() -> None:
     )
 
     with torch.no_grad():
-        ml_clean_pred = int(ml_model(clean_image.to(args.device)).argmax(dim=1).item())
-        ml_adv_pred = int(ml_model(ml_adv_image.to(args.device)).argmax(dim=1).item())
-        qml_clean_pred = int(qml_model(clean_image.to(args.device)).argmax(dim=1).item())
-        qml_adv_pred = int(qml_model(qml_adv_image.to(args.device)).argmax(dim=1).item())
+        ml_clean_pred = int(ml_model(clean_image.to(device)).argmax(dim=1).item())
+        ml_adv_pred = int(ml_model(ml_adv_image.to(device)).argmax(dim=1).item())
+        qml_clean_pred = int(qml_model(clean_image.to(qml_device)).argmax(dim=1).item())
+        qml_adv_pred = int(qml_model(qml_adv_image.to(qml_device)).argmax(dim=1).item())
 
     print(f"Selected sample index: {sample_idx} | target class: {target_class}")
     print(f"ML predictions  - clean: {ml_clean_pred}, adversarial: {ml_adv_pred}")
