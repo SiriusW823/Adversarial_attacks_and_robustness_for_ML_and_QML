@@ -107,6 +107,38 @@ These white-box gradient-based attacks probe the sensitivity of the models to ad
    ```
 4. Execute all cells sequentially to run the entire pipeline: training, attack generation, evaluation, and visualization.
 
+### Notebook Example: Attack Spectrum Scan
+
+After your notebook has already trained `ml_model` / `qml_model` and prepared `X_test` / `y_test`, you can scan robustness across multiple epsilon values with the helper module in this repository:
+
+```python
+from torch.utils.data import DataLoader, TensorDataset
+
+from robustness_scan import (
+    DEFAULT_EPS_LIST,
+    evaluate_robustness_curve,
+    fgsm_attack,
+    pgd_attack,
+    plot_robustness_decay_curve,
+)
+
+eps_list = DEFAULT_EPS_LIST
+test_loader = DataLoader(TensorDataset(X_test, y_test), batch_size=64, shuffle=False)
+
+ml_fgsm_curve = evaluate_robustness_curve(ml_model, test_loader, "fgsm", eps_list)
+ml_pgd_curve = evaluate_robustness_curve(ml_model, test_loader, "pgd", eps_list)
+qml_fgsm_curve = evaluate_robustness_curve(qml_model, test_loader, "fgsm", eps_list)
+qml_pgd_curve = evaluate_robustness_curve(qml_model, test_loader, "pgd", eps_list)
+
+plot_robustness_decay_curve(
+    eps_list,
+    ml_fgsm_curve,
+    ml_pgd_curve,
+    qml_fgsm_curve,
+    qml_pgd_curve,
+)
+```
+
 ---
 
 ## Results & Insights
