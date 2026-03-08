@@ -107,6 +107,21 @@ These white-box gradient-based attacks probe the sensitivity of the models to ad
    ```
 4. Execute all cells sequentially to run the entire pipeline: training, attack generation, evaluation, and visualization.
 
+### Script Example: Quantum Architecture Ablation Study
+
+This repository also includes a standalone script for the 2×2 quantum ablation study over:
+
+- `AngleEmbedding` vs. `AmplitudeEmbedding`
+- `BasicEntanglerLayers` vs. `StronglyEntanglingLayers`
+
+The script trains the four architecture combinations, evaluates clean accuracy plus PGD robustness at a fixed epsilon, and saves a grouped bar chart:
+
+```bash
+python quantum_ablation_study.py --attack-eps 0.15 --plot-path quantum_ablation_grouped_bar.png
+```
+
+Optional flags such as `--epochs`, `--n-samples`, and `--device` can be used to shorten or scale the experiment.
+
 ### Notebook Example: Attack Spectrum Scan
 
 After your notebook has already trained `ml_model` / `qml_model` and prepared `X_test` / `y_test`, you can scan robustness across multiple epsilon values with the helper module in this repository:
