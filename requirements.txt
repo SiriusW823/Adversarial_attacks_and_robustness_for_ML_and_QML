@@ -1,6 +1,7 @@
 numpy==1.26.4
 autoray==0.6.7
 pennylane==0.35.1
+# Keep torch unpinned so Colab can resolve a CUDA-compatible build for the active GPU runtime.
 torch
-matplotlib
-captum
+matplotlib==3.10.8
+captum==0.8.0

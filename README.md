@@ -73,16 +73,7 @@ These white-box gradient-based attacks probe the sensitivity of the models to ad
 
 - Python 3.10 or newer  
 - Google Colab (recommended) with **T4 GPU** backend for faster classical-model training  
-- Python packages:  
-
-  numpy==1.26.4
-  autoray==0.6.7
-  pennylane==0.35.1
-  torch
-  matplotlib
-  captum
-
-These packages are provided in [`requirements.txt`](requirements.txt). The repository's Python scripts currently depend on `torch`, `numpy`, `matplotlib`, `pennylane`, `autoray`, and `captum`.
+- Install the Python packages listed in [`requirements.txt`](requirements.txt). The current scripts depend on `torch`, `numpy`, `matplotlib`, `pennylane`, `autoray`, and `captum`.
 
 ### Run Instructions
 
@@ -103,6 +94,7 @@ These packages are provided in [`requirements.txt`](requirements.txt). The repos
 3. If you are using **Google Colab + T4 GPU**:
 
    ```python
+   # Resolve common Colab package conflicts before installing the project's requirements.
    !pip uninstall -y jax jaxlib opencv-python opencv-python-headless opencv-contrib-python shap pytensor albumentations albucore >/dev/null 2>&1
    !pip install -r requirements.txt --quiet
    ```
