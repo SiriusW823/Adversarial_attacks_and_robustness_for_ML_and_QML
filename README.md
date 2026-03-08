@@ -97,16 +97,15 @@ These white-box gradient-based attacks probe the sensitivity of the models to ad
 
    ```python
    %pip install -U pip setuptools wheel --quiet
-   %pip install --upgrade --upgrade-strategy eager --no-cache-dir \
-       "numpy>=2.0" \
+   %pip install --upgrade --no-cache-dir \
+       "numpy>=2.0,<2.2" \
        "autoray>=0.8.2" \
        "pennylane>=0.44.0" \
        "pennylane-lightning[gpu]>=0.44.0" \
-       captum \
-       matplotlib --quiet
+       captum --quiet
    ```
 
-   After the first install pass, restart the Colab runtime once before importing project modules. The checked-in notebook now does this automatically to avoid the NumPy binary-compatibility error `numpy.dtype size changed`.
+   After the first install pass, restart the Colab runtime once before importing project modules. The checked-in notebook now does this automatically by terminating the current kernel process, which avoids the NumPy binary-compatibility error `numpy.dtype size changed`.
 
    Then enable **Runtime → Change runtime type → T4 GPU** before running the notebook. The scripts now default to `--device auto` and `--quantum-device auto`, which will:
    - choose `cuda` for PyTorch when a GPU is available;
