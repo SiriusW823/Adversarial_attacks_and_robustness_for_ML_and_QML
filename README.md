@@ -74,6 +74,7 @@ These white-box gradient-based attacks probe the sensitivity of the models to ad
 - Python 3.10 or newer  
 - Google Colab (recommended) with **T4 GPU** backend for faster classical-model training  
 - Install the Python packages listed in [`requirements.txt`](requirements.txt). The current scripts depend on `torch`, `numpy`, `matplotlib`, `pennylane`, `autoray`, and `captum`.
+- `torchvision` and `torchaudio` are not required by the current checked-in Python scripts, so they are intentionally omitted from `requirements.txt`.
 
 ### Run Instructions
 
