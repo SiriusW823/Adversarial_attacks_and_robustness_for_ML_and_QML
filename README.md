@@ -154,6 +154,22 @@ plot_robustness_decay_curve(
 )
 ```
 
+### Script Example: Integrated Gradients XAI Comparison
+
+For a reusable Captum-based explainability workflow, the repository now includes:
+
+- `generate_saliency_map(model, clean_image, adv_image, target_class)` in `explainability.py`
+- `plot_attribution_comparison(...)` for the required 1×4 clean / attribution / adversarial / attribution layout
+- `xai_ig_comparison_demo.py` to compare the same test image across the classical ML and QML models
+
+Example:
+
+```bash
+python xai_ig_comparison_demo.py --epochs 20 --plot-path integrated_gradients_ml_qml_comparison.png
+```
+
+The script trains one classical CNN and one quantum CNN on the synthetic plus/minus dataset, extracts the same held-out test image, generates a PGD adversarial version for each model, and saves a combined ML-vs-QML Integrated Gradients comparison figure.
+
 ---
 
 ## Results & Insights

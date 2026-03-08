@@ -97,6 +97,22 @@ class CNNBackbone(nn.Module):
         return x.view(x.size(0), -1)
 
 
+class ClassicalCNN(nn.Module):
+    def __init__(self, n_classes: int = 2) -> None:
+        super().__init__()
+        self.feature_dim = 32 * 2 * 2
+        self.backbone = CNNBackbone()
+        self.fc1 = nn.Linear(self.feature_dim, 16)
+        self.fc2 = nn.Linear(16, 8)
+        self.fc_out = nn.Linear(8, n_classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.backbone(x)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        return self.fc_out(x)
+
+
 def get_embedding_feature_dim(embedding: EmbeddingType, n_qubits: int) -> int:
     """Return the classical feature size required by the chosen quantum embedding.
 
