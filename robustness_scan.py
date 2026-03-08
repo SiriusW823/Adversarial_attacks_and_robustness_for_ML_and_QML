@@ -22,6 +22,7 @@ def fgsm_attack(
     labels: torch.Tensor,
     eps: float,
 ) -> torch.Tensor:
+    """Generate a batched FGSM adversarial example tensor for a classifier."""
     was_training = model.training
     model.eval()
 
@@ -50,6 +51,7 @@ def pgd_attack(
     alpha: float = 0.04,
     steps: int = 10,
 ) -> torch.Tensor:
+    """Run batched L-infinity PGD with step size ``alpha`` for ``steps`` updates."""
     was_training = model.training
     model.eval()
 
@@ -88,6 +90,7 @@ def evaluate_robustness_curve(
     attack_type: str,
     eps_list: Sequence[float],
 ) -> list[float]:
+    """Evaluate accuracy across ``eps_list`` for ``fgsm`` or ``pgd`` attacks."""
     attack_name = attack_type.lower()
     attack_map = {"fgsm": fgsm_attack, "pgd": pgd_attack}
     if attack_name not in attack_map:
@@ -134,12 +137,12 @@ def plot_robustness_decay_curve(
     ml_pgd_curve: Sequence[float],
     qml_fgsm_curve: Sequence[float],
     qml_pgd_curve: Sequence[float],
-    ax: plt.Axes | None = None,
+    ax: plt.Axes | None = None
 ):
+    """Plot ML/QML FGSM and PGD accuracy curves against epsilon."""
     if ax is None:
-        fig, ax = plt.subplots(figsize=(8, 5))
-    else:
-        fig = ax.figure
+        _, ax = plt.subplots(figsize=(8, 5))
+    fig = ax.figure
 
     ax.plot(eps_list, ml_fgsm_curve, marker="o", label="ML-FGSM")
     ax.plot(eps_list, ml_pgd_curve, marker="s", label="ML-PGD")
